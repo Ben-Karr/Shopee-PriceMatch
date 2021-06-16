@@ -26,7 +26,7 @@ def split_df(df, label_col = 'label', val_col = 'is_valid', pct = 0.2, by_label 
 
     return df
 
-## from https://docs.fast.ai/tutorial.siamese.html
+## copied from https://docs.fast.ai/tutorial.siamese.html
 class SiameseImage(fastuple):
     def show(self, ctx=None, **kwargs): 
         if len(self) > 2:
@@ -50,20 +50,28 @@ class SiameseTransform(Transform):
             ## split the data by label and add a column to the df to capture the result
             df = split_df(df, label_col = label_col)
 
+        ## add atributes have them available in the other methods
         self.df = df
         self.f_col = f_col
         self.label_col = label_col
         self.val_col = val_col
         self.path = Path(path)
-        self.splits = [ (df[val_col] == 1).index.tolist(), (df[val_col] == 0).index.tolist() ]
 
-        ## Dicts of label_groups and containing files
+        ## save splits as attribute, to be used by TfmdLists
+        self.splits = [ (df[val_col] == 1).index.tolist(), (df[val_col] == 0).index.tolist() ]
+        ## save labels as attribute
         self.labels = [ self.df[self.df[self.val_col] == i][self.label_col].unique() for i in range(2) ]
+
+        ## Dicts of labels and containing files
         self.splbl2files = [ df[df[val_col] == i].groupby([label_col])[f_col].apply(list).to_dict() for i in range(2) ]
+        ## The tuples for the validation set is drawn once 
+        ## (not once per epoch as in the train case) to be comparable over different stages of training
         self.valid = {f: self._draw(f,1) for f in df[df[val_col] == 1][f_col].tolist()}
      
     def encodes(self, row):
+        ## Lookup filename in df
         f = self.df.loc[row, self.f_col]
+        ## if f in valid, pick f2,same = valid[f], else draw f2,same
         f2, same = self.valid.get(f, self._draw(f, 0))
         img1, img2 = PILImage.create(self.path / f), PILImage.create(self.path / f2)
         
@@ -72,16 +80,20 @@ class SiameseTransform(Transform):
     def _draw(self, f, split = 0):
             same = random.random() < 0.5
 
+            ## Lookup label and split
             cls = self.df[self.df[self.f_col] == f][self.label_col].values[0]
             split = self.df[self.df[self.f_col] == f][self.val_col].values[0]
 
             if not same:
+                ## Pick a different label than that of f
                 cls = random.choice([l for l in (self.labels)[split] if l != cls])
             
+            ## Pick file with chosen label
             ## Added f2 != f, since there is nothing to learn elsewise
             return random.choice([f2 for f2 in (self.splbl2files)[split][cls] if f2 != f]), int(same)
 
 
+## copied from https://docs.fast.ai/tutorial.siamese.html
 @typedispatch
 def show_batch(x:SiameseImage, 
                y, 
@@ -100,6 +112,7 @@ def show_batch(x:SiameseImage,
     for i,ctx in enumerate(ctxs): 
         SiameseImage(x[0][i], x[1][i], ['Not similar','Similar'][x[2][i].item()]).show(ctx=ctx)
 
+## copied from https://docs.fast.ai/tutorial.siamese.html
 @typedispatch
 def show_results(x:SiameseImage, 
                  y, 
@@ -122,6 +135,7 @@ def show_results(x:SiameseImage,
         title = f'Actual: {["Not similar","Similar"][int(x[2][i].item())]} \n Prediction: {["Not similar","Similar"][y[2][i].argmax().item()]}'
         SiameseImage(x[0][i], x[1][i], title).show(ctx=ctx)
 
+## copied from https://docs.fast.ai/tutorial.siamese.html
 class SiameseModel(Module):
     def __init__(self, encoder, head):
         self.encoder,self.head = encoder,head
@@ -130,9 +144,11 @@ class SiameseModel(Module):
         ftrs = torch.cat([self.encoder(x1), self.encoder(x2)], dim=1)
         return self.head(ftrs)
 
+## copied from https://docs.fast.ai/tutorial.siamese.html
 def siamese_splitter(model):
     return [params(model.encoder), params(model.head)]
 
+## copied from https://docs.fast.ai/tutorial.siamese.html
 def loss_func(out, targ):
     return CrossEntropyLossFlat()(out, targ.long())
 
